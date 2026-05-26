@@ -59,7 +59,7 @@ def verify_admin(token: str):
 
 @app.get("/")
 def home():
-    return {"message": "Apex Bank API is running"}
+    return {"message": "Mass Bank API is running"}
 
 @app.get("/profile")
 def profile(token: str = Depends(oauth2_scheme)):
@@ -362,33 +362,44 @@ class Update_User(BaseModel):
     password: Optional[str] = None
 
 @app.put("/user/{account_number}")
-def update_user(account_number: int, details: Update_User, token: str = Depends(oauth2_scheme)):
+def update_user(
+    account_number: int,
+    details: Update_User,
+    token: str = Depends(oauth2_scheme)
+):
     data = decode_token(token)
+
     if data["account_number"] != account_number:
         return {"error": "Unauthorized account access"}
 
-    db     = get_db()
+    if not any([details.name, details.email, details.password]):
+        return {"error": "At least one field must be provided"}
+
+    db = get_db()
     cursor = db.cursor(dictionary=True)
-    updated_user = {}
+
+    requested_updates = {}
+
     try:
+
         if details.name:
-            cursor.execute("update users set name=%s where account_number=%s",(details.name, account_number))
-            updated_user["name"] = details.name
+            requested_updates["new_name"] = details.name
 
         if details.email:
-            cursor.execute("update users set email=%s where account_number=%s",(details.email, account_number))
-            updated_user["email"] = details.email
+            requested_updates["new_email"] = details.email
 
         if details.password:
-            hashed = hashlib.sha256(
-                details.password.encode()
-            ).hexdigest()
+            requested_updates["new_password"] = "password update requested"
 
-            cursor.execute("update users set password=%s where account_number=%s",(hashed, account_number))
-            updated_user["password"] = "password updated"
+        cursor.execute("""insert into update_requests(account_number,new_name,new_email,new_password)
+                       values (%s, %s, %s, %s)""",(account_number,details.name,details.email,details.password))
 
         db.commit()
-        return {"message": "Profile updated successfully", "updated_details": updated_user}
+        return {
+            "message": "Update request sent to admin for approval",
+            "requested_updates": requested_updates
+        }
+
     finally:
         cursor.close()
         db.close()
